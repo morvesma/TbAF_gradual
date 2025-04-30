@@ -1,0 +1,214 @@
+arg(a).
+arg(b).
+arg(c).
+arg(d).
+
+value(a,75).
+value(a,40).
+value(b,80).
+value(c,28).
+value(d,40).
+
+rel(b,a,r1).
+rel(a,b,r1).
+rel(d,a,r1).
+rel(a,d,r1).
+rel(d,a,r2).
+rel(b,c,r2).
+rel(b,d,r2).
+rel(d,b,r2).
+rel(d,c,r2).
+rel(a,c,r1).
+
+weak(r1).
+stre(r2).
+
+%definir leafs---
+
+
+leaf(ARG):- arg(ARG), not rel(_,ARG,_).
+
+-leaf(ARG):- arg(ARG), not leaf(ARG). 
+
+
+leafs(X):-not leaf(_), X=0.
+
+%#show leaf/1.
+%#show -leaf/1.
+%#show leafs/1.
+
+
+%--------- determinar un nodo inicial---------
+
+count_rels(ARG, C) :- arg(ARG), C = #count {X : rel(X,ARG,_) }. %contamos la cantidad de INs
+
+list_rels_in(X):-count_rels(_,C), X=C. 
+
+min_ins(X):- list_rels_in(X), not greater_rel(X). 
+greater_rel(X):- list_rels_in(Y), list_rels_in(X), Y < X.
+
+temp_init_args(ARG):- arg(ARG), min_ins(X), count_rels(ARG, X).
+
+1 { init_arg(X) : temp_init_args(X) } 1.
+
+%#show count_rels/2.
+%#show list_rels_in/1.
+%#show min_ins/1.
+%#show temp_init_args/1.
+
+init(ARG):- not leaf(_), init_arg(ARG).
+
+#show init/1.
+%------------------------
+
+%---------intervalos finales de los base score de los argumentos---------
+
+base_score(ARG, MIN, MAX):- arg(ARG), min_value(ARG,X1), max_value(ARG,X2), MIN=X1, MAX=X2.
+
+%#show min_value/2.
+%#show base_score/3.
+%--------------------------------
+
+%---------------BEGIN MIN MAX CALCULATION - FIRST AGGREGATION---------------
+min_value(ARG, X) :- arg(ARG), value(ARG, X), not greater_value(ARG, X).
+greater_value(ARG,X):- value(ARG,Y), value(ARG,X), Y < X.
+
+max_value(ARG,X) :- arg(ARG), value(ARG,X), not less_value(ARG, X).
+less_value(ARG,X):- value(ARG, Y), value(ARG,X), Y > X.
+
+%------------- END MIN MAX CALCULATION - FIRST AGGREGATION
+
+
+
+%evaluar si hay relaciones de mantenimiento%
+
+mant(ARG):- arg(ARG), leaf(ARG), rel(ARG,_,_), base_score(ARG, MIN, MAX), LOCA=(MIN+MAX)/2, 
+PREC=100-MAX+MIN, COMB_TEMP=LOCA*PREC, COMB=COMB_TEMP/100, COMB<=20. %20 es el valor del threshold
+
+mant(ARG):- arg(ARG), -leaf(ARG),rel(ARG,_,_), strength(ARG, MIN, MAX), LOCA=(MIN+MAX)/2, 
+PREC=100-MAX+MIN, COMB_TEMP=LOCA*PREC, COMB=COMB_TEMP/100, COMB<=20. %20 es el valor del threshold
+
+mant(ARG):- arg(ARG), init(ARG),rel(ARG,_,_), base_score(ARG, MIN, MAX), LOCA=(MIN+MAX)/2, 
+PREC=100-MAX+MIN, COMB_TEMP=LOCA*PREC, COMB=COMB_TEMP/100, COMB<=20. %20 es el valor del threshold
+
+%#show mant/1.
+
+%-------------------------------------------------------
+
+%------------- JUNTAMOS LOS INTERVALOS DE AMBOS TIPOS DE RELACIONES, WEAKENING Y STRENGHTENING ---
+
+%hacemos una lista de los intervalos de los argumentos atacantes
+
+inter_weak(ARG,LB, UB):- arg(ARG), not rel(_,ARG,Y), weak(Y), LB=0, UB=0. %no tiene atacantes
+
+inter_weak(ARG,LB,UB):- arg(ARG), rel(WEAK,ARG,Y), min_value(WEAK,X1), max_value(WEAK,X2), 
+weak(Y), leaf(WEAK), not mant(WEAK), LB=X1, UB=X2. %su atacante es una hoja
+
+inter_weak(ARG,LB,UB):- arg(ARG), rel(WEAK,ARG,Y), min_value(WEAK,X1), max_value(WEAK,X2), 
+weak(Y), init(WEAK), not mant(WEAK), LB=X1, UB=X2. %su atacante es una hoja
+
+inter_weak(ARG,LB,UB):- arg(ARG), rel(WEAK,ARG,Y), -leaf(WEAK), strength(WEAK, MIN, MAX), 
+weak(Y), not mant(WEAK), LB=MIN, UB=MAX. %su atacante no es una hoja, es un nodo interno
+
+%#show inter_weak/3.
+%------------------------------------------
+
+%hacemos una lista de los intervalos de los argumentos soportantes
+inter_stre(ARG,LB, UB):- arg(ARG), not rel(_,ARG,Y), stre(Y), LB=0, UB=0.
+
+inter_stre(ARG,LB,UB):- arg(ARG), rel(STRE,ARG,Y), min_value(STRE,X1), max_value(STRE,X2), 
+stre(Y), leaf(STRE), not mant(STRE), LB=X1, UB=X2.
+
+inter_stre(ARG,LB,UB):- arg(ARG), rel(STRE,ARG,Y), min_value(STRE,X1), max_value(STRE,X2), 
+stre(Y), init(STRE), not mant(STRE), LB=X1, UB=X2.
+
+inter_stre(ARG,LB,UB):- arg(ARG), rel(STRE,ARG,Y), -leaf(STRE), strength(STRE, MIN, MAX), 
+stre(Y),not mant(STRE),LB=MIN, UB=MAX.
+
+%#show inter_stre/3.
+%---------------------------------------------------------------------------------
+
+%------------- CONTAMOS CUANTAS RELACIONES WEAKENING Y CUANTAS RELACIONES STRENGHTENING 
+%TIENE CADA ARGUMENTO -----------
+
+count_weak(ARG, C) :- arg(ARG), C = #count { LB : inter_weak(ARG,LB,UB) }.
+
+count_stre(ARG, C) :- arg(ARG), C = #count { LB : inter_stre(ARG,LB,UB) }.
+
+#show count_weak/2.
+#show count_stre/2.
+%--------------------------------------
+
+% SUMAMOS LOS LOWER BOUNDS Y LOS UPPER BOUNDS DE CADA ARGUMENTO ---------
+
+inter_weak_sum(ARG,LBT,UBT) :- arg(ARG), LBT =#sum { Z, Y: inter_weak(ARG,Z,Y) },
+UBT = #sum { Y, Z: inter_weak(ARG,Z,Y) }.
+
+inter_stre_sum(ARG,LBT,UBT) :- arg(ARG), LBT =#sum { Z, Y: inter_stre(ARG,Z,Y) },
+UBT = #sum { Y, Z: inter_stre(ARG,Z,Y) }.
+
+#show inter_stre_sum/3.
+#show inter_weak_sum/3.
+
+%-----------------------------------------------
+
+% ----------- SACAMOS EL PROMEDIO -----------SECOND AGGREGATION -----------
+
+average_weak(ARG, LBF, UBF) :- arg(ARG), inter_weak_sum(ARG,LBT,UBT),
+count_weak(ARG, C), LBF = LBT/C, UBF = UBT/C.
+
+average_weak(ARG, LBF, UBF) :- arg(ARG), inter_weak_sum(ARG,LBT,UBT),
+LBT=0, UBT=0, LBF=0, UBF=0.
+
+average_stre(ARG, LBF, UBF) :- arg(ARG), inter_stre_sum(ARG,LBT,UBT),
+count_stre(ARG, C), LBF = LBT/C, UBF = UBT/C.
+
+average_stre(ARG, LBF, UBF) :- arg(ARG), inter_stre_sum(ARG,LBT,UBT),
+LBT=0, UBT=0, LBF=0, UBF=0.
+
+
+#show average_weak/3.
+#show average_stre/3.
+%--------------
+
+%-------calcular la fuerza de los argumentos: primero sumamos ---------
+
+strength_temp(ARG, LBT, UBT):- arg(ARG), base_score(ARG, MIN, MAX),
+average_stre(ARG, LBF2, UBF2), LBT= MIN+LBF2, UBT=MAX+UBF2.
+
+
+#show strength_temp/3.
+
+%-----------------------------------
+
+%----------normalizar valores despues de sumar ---------
+
+strength_temp2(ARG, LBD, UBD):- arg(ARG), strength_temp(ARG, LBT, UBT), UBT<=100, LBD=LBT,
+UBD=UBT.
+
+strength_temp2(ARG, LBD, UBD):- arg(ARG), strength_temp(ARG, LBT, UBT), UBT>100, X=UBT-100, 
+LBT-X >= 0, LBD=LBT-X, UBD=UBT-X.
+
+strength_temp2(ARG, LBD, UBD):- arg(ARG), strength_temp(ARG, LBT, UBT), UBT>100, X=UBT-100,
+LBT-X <0, LBD=0, UBD=UBT-X.
+
+#show strength_temp2/3.
+
+%-------calcular la fuerza de los argumentos: ahora restamos ---------
+
+strength_temp3(ARG, LBT, UBT):- arg(ARG), strength_temp2(ARG, MIN, MAX),
+average_weak(ARG, LBF2, UBF2), LBT= MIN-UBF2, UBT=MAX-LBF2.
+
+%#show average_weak/3.
+
+
+%----------normalizar valores despues de restar ---------
+strength(ARG, LBF, UBF):- arg(ARG), strength_temp3(ARG, LBT, UBT), LBT>=0, LBF=LBT,
+UBF=UBT.
+
+strength(ARG, LBF, UBF):- arg(ARG), strength_temp3(ARG, LBT, UBT), LBT<=0, X=0-LBT, UBT+X<=100,
+LBF=LBT+X, UBF=UBT+X.
+
+strength(ARG, LBF, UBF):- arg(ARG), strength_temp3(ARG, LBT, UBT), LBT<=0, X=0-LBT, UBT+X >100,
+LBF=LBT+X, UBF=100.
+
