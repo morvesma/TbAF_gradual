@@ -1,0 +1,97 @@
+arg(a).
+arg(b).
+arg(c).
+arg(d).
+
+value(a,75).
+value(a,40).
+value(b,80).
+value(c,28).
+value(d,40).
+
+rel(b,a,r1).
+rel(a,b,r1).
+rel(d,a,r1).
+rel(a,d,r1).
+rel(d,a,r2).
+rel(b,c,r2).
+rel(b,d,r2).
+rel(d,b,r2).
+rel(d,c,r2).
+rel(a,c,r1).
+rel(c,a,r1).
+rel(c,b,r2).
+rel(c,d,r1).
+
+
+weak(r1).
+stre(r2).
+
+min_value(ARG, X) :- arg(ARG), value(ARG, X), not greater_value(ARG, X).
+greater_value(ARG,X):- value(ARG,Y), value(ARG,X), Y < X.
+
+max_value(ARG,X) :- arg(ARG), value(ARG,X), not less_value(ARG, X).
+less_value(ARG,X):- value(ARG, Y), value(ARG,X), Y > X.
+
+base_score(ARG, MIN, MAX):- arg(ARG), min_value(ARG,X1), max_value(ARG,X2), MIN=X1, MAX=X2.
+
+mant(ARG):- arg(ARG), rel(ARG,_,_), base_score(ARG, MIN, MAX), LOCA=(MIN+MAX)/2, 
+PREC=100-MAX+MIN, COMB_TEMP=LOCA*PREC, COMB=COMB_TEMP/100, COMB<=30. %20 es el valor del threshold
+
+inter_weak(ARG,LB, UB):- arg(ARG), not rel(_,ARG,Y), weak(Y), LB=0, UB=0. %no tiene atacantes
+
+inter_weak(ARG,LB,UB):- arg(ARG), rel(WEAK,ARG,Y), min_value(WEAK,X1), max_value(WEAK,X2), 
+weak(Y), not mant(WEAK), LB=X1, UB=X2. 
+
+inter_stre(ARG,LB, UB):- arg(ARG), not rel(_,ARG,Y), stre(Y), LB=0, UB=0.
+
+inter_stre(ARG,LB,UB):- arg(ARG), rel(STRE,ARG,Y), min_value(STRE,X1), max_value(STRE,X2), 
+stre(Y), not mant(STRE), LB=X1, UB=X2.
+
+count_weak(ARG, C) :- arg(ARG), C = #count { LB : inter_weak(ARG,LB,UB) }.
+
+count_stre(ARG, C) :- arg(ARG), C = #count { LB : inter_stre(ARG,LB,UB) }.
+
+inter_weak_sum(ARG,LBT,UBT) :- arg(ARG), LBT =#sum { Z, Y: inter_weak(ARG,Z,Y) },
+UBT = #sum { Y, Z: inter_weak(ARG,Z,Y) }.
+
+inter_stre_sum(ARG,LBT,UBT) :- arg(ARG), LBT =#sum { Z, Y: inter_stre(ARG,Z,Y) },
+UBT = #sum { Y, Z: inter_stre(ARG,Z,Y) }.
+
+average_weak(ARG, LBF, UBF) :- arg(ARG), inter_weak_sum(ARG,LBT,UBT),
+count_weak(ARG, C), LBF = LBT/C, UBF = UBT/C.
+
+average_weak(ARG, LBF, UBF) :- arg(ARG), inter_weak_sum(ARG,LBT,UBT),
+LBT=0, UBT=0, LBF=0, UBF=0.
+
+average_stre(ARG, LBF, UBF) :- arg(ARG), inter_stre_sum(ARG,LBT,UBT),
+count_stre(ARG, C), LBF = LBT/C, UBF = UBT/C.
+
+average_stre(ARG, LBF, UBF) :- arg(ARG), inter_stre_sum(ARG,LBT,UBT),
+LBT=0, UBT=0, LBF=0, UBF=0.
+
+strength_temp(ARG, LBT, UBT):- arg(ARG), base_score(ARG, MIN, MAX),
+average_stre(ARG, LBF2, UBF2), LBT= MIN+LBF2, UBT=MAX+UBF2.
+
+strength_temp2(ARG, LBD, UBD):- arg(ARG), strength_temp(ARG, LBT, UBT), UBT<=100, LBD=LBT,
+UBD=UBT.
+
+strength_temp2(ARG, LBD, UBD):- arg(ARG), strength_temp(ARG, LBT, UBT), UBT>100, X=UBT-100, 
+LBT-X >= 0, LBD=LBT-X, UBD=UBT-X.
+
+strength_temp2(ARG, LBD, UBD):- arg(ARG), strength_temp(ARG, LBT, UBT), UBT>100, X=UBT-100,
+LBT-X <0, LBD=0, UBD=UBT-X.
+
+strength_temp3(ARG, LBT, UBT):- arg(ARG), strength_temp2(ARG, MIN, MAX),
+average_weak(ARG, LBF2, UBF2), LBT= MIN-UBF2, UBT=MAX-LBF2.
+
+strength(ARG, LBF, UBF):- arg(ARG), strength_temp3(ARG, LBT, UBT), LBT>=0, LBF=LBT,
+UBF=UBT.
+
+strength(ARG, LBF, UBF):- arg(ARG), strength_temp3(ARG, LBT, UBT), LBT<=0, X=0-LBT, UBT+X<=100,
+LBF=LBT+X, UBF=UBT+X.
+
+strength(ARG, LBF, UBF):- arg(ARG), strength_temp3(ARG, LBT, UBT), LBT<=0, X=0-LBT, UBT+X >100,
+LBF=LBT+X, UBF=100.
+
+#show strength/3.
